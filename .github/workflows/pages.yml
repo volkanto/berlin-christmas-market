@@ -1,0 +1,77 @@
+name: Publish calendar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      refresh_data:
+        description: Fetch the latest listings from Berlin.de before publishing
+        type: boolean
+        default: true
+  schedule:
+    # Daily at 07:00, 12:00, 16:00 UTC. GitHub may delay scheduled runs.
+    - cron: '0 7,12,16 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install the locked project
+        run: npm ci --ignore-scripts
+      - name: Test parsers and export
+        run: npm test
+      - name: Restore last successful market data
+        uses: actions/cache@v6
+        with:
+          path: .cache/markets.json
+          key: berlin-markets-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            berlin-markets-v1-
+      - name: Refresh Berlin.de data
+        id: refresh
+        if: github.event_name != 'workflow_dispatch' || inputs.refresh_data
+        continue-on-error: true
+        run: npm run refresh-data
+      - name: Report refresh failure
+        if: steps.refresh.outcome == 'failure'
+        run: echo '::warning::Berlin.de could not be refreshed. Last successful data or the bundled snapshot will be published.'
+      - name: Build the static calendar
+        run: npm run build
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,16 @@
+{
+  "name": "berlin-market-calendar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mobile Berlin Christmas market calendar, deployed to GitHub Pages with GitHub Actions.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "refresh-data": "node scripts/refresh-data.mjs",
+    "serve": "node scripts/serve.mjs"
+  }
+}
