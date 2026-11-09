@@ -30,3 +30,10 @@ export function freshness(m,now=Date.now()){
  const stale=!Number.isFinite(checked)||now-checked>48*3600000;
  return {warning:stale||!!m.refreshFailed||!!m.refreshPending,text:date?`Hours & entry checked ${date}${m.refreshFailed?' · latest check unavailable':m.refreshPending?' · update pending':stale?' · saved details':''}`:'Hours & entry check date unavailable'};
 }
+
+export function closingMinutes(slot,selected,today,minutes){
+ if(!openNow(slot,selected,today,minutes)||!Number.isFinite(slot.h?.[1]))return null;
+ const current=slot.overnight?minutes+1440:minutes;
+ const left=Math.ceil(slot.h[1]*60-current);
+ return left>0&&left<=30?left:null;
+}

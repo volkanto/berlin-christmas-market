@@ -1,4 +1,4 @@
-import {distanceKm,openNow,sharedState,stateUrl,clusterPoints,freshness} from './calendar-utils.js';
+import {distanceKm,openNow,sharedState,stateUrl,clusterPoints,freshness,closingMinutes} from './calendar-utils.js';
 const $=id=>document.getElementById(id);
 const TZ='Europe/Berlin';
 function today(){const p=new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());return ['year','month','day'].map(t=>p.find(x=>x.type===t).value).join('-')}
@@ -19,7 +19,8 @@ try{const saved=JSON.parse(localStorage.getItem('berlin-market-favorites-v1')||'
 const dayStrip=$('days');
 const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
 const inlineMaps=new Map();
-const collapsedDistricts=new Set();
+let restoredBrowse=null;try{restoredBrowse=JSON.parse(sessionStorage.getItem('berlin-browse-v1')||'null')}catch{}
+const collapsedDistricts=new Set(restoredBrowse?.url===location.search&&Array.isArray(restoredBrowse.collapsed)?restoredBrowse.collapsed:[]);
 let view=initial.view,overviewMap=null,overviewMarkers=new Map(),overviewLayer=null,mapKey='',fitAll=null,redrawClusters=null,wirePopup=null,focusedMarket=null;
 function clamp(k){return k<MIN_DATE?MIN_DATE:k>MAX_DATE?MAX_DATE:k}
 function buildDays(){
@@ -90,9 +91,7 @@ function googleMapsUrl(m){
  return 'https://www.google.com/maps/dir/?'+new URLSearchParams({api:'1',destination:m.coords?m.coords.join(','):(m.address||m.name)+', Berlin',travelmode:'transit'});
 }
 function mapMarkup(m){
- const [lat,lon]=m.coords;
- const apple=new URLSearchParams({daddr:lat+','+lon,dirflg:'r'});
- return `<div class="market-map" id="map-canvas-${m.id}" role="region" aria-label="Map of ${esc(m.name)}"></div><p class="map-error" id="map-error-${m.id}" hidden>Map tiles are unavailable. Open directions below.</p><div class="map-address">${esc(m.address||m.name)}</div><div class="map-links"><a href="https://maps.apple.com/?${apple}" target="_blank" rel="noopener">Apple Maps <span aria-hidden="true">↗</span></a></div>`;
+ return `<div class="market-map" id="map-canvas-${m.id}" role="region" aria-label="Map of ${esc(m.name)}"></div><p class="map-error" id="map-error-${m.id}" hidden>Map tiles are unavailable. Use Directions on the market card.</p><div class="map-address">${esc(m.address||m.name)}</div>`;
 }
 function toggleMap(id){
  const button=$('toggle-'+id),panel=$('map-'+id),m=MARKETS.find(m=>String(m.id)===String(id)),open=panel.hidden;
@@ -111,11 +110,18 @@ const ICONS={external:'<path d="M14 3h7v7M21 3 10 14M10 3H3v18h18v-7"/>',clock:'
 function icon(name){return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]||''}</svg>`}
 function timeLabel(s){const h=s.h;return !h?'Hours unconfirmed':s.overnight?'Until '+hour(h[1]):h[1]===null?'From '+hour(h[0]):hour(h[0])+'–'+hour(h[1])+(h[1]>24?' +1':'')}
 function feeLabel(m){return admission(m,selected).replace(/^Entry /,'').replace(/^Free entry/,'Free')}
-function openBadge(s){const state=marketStatus(s);if(state.label==='Open now')return '<span class="open-badge"><i aria-hidden="true"></i>Open</span>';return selected===today()&&!s.unknown&&state.label==='Opens later'?'<span class="opening-hint">Opens '+hour(s.h[0])+'</span>':''}
+function openBadge(s){
+ if(selected!==today()||s.unknown)return '';
+ const state=marketStatus(s);
+ if(state.label==='Open now'){const left=closingMinutes(s,selected,today(),minute());return left===null?'<span class="open-badge"><i aria-hidden="true"></i>Open</span>':'<span class="closing-badge"><i aria-hidden="true"></i>Closes in '+left+' min</span>'}
+ if(state.label==='Opens later')return '<span class="opening-hint">Opens '+hour(s.h[0])+'</span>';
+ return '<span class="closed-badge">Closed</span>';
+}
+
 function saveButton(m){return `<button class="favorite-toggle" data-favorite="${esc(m.id)}" aria-pressed="${favorites.has(m.url)}" aria-label="${favorites.has(m.url)?'Remove':'Save'} ${esc(m.name)} ${favorites.has(m.url)?'from':'to'} favorites" title="${favorites.has(m.url)?'Remove from favorites':'Save market'}">${icon('bookmark')}</button>`}
 function marketMarkup(s,grouped=false){
  const tag=grouped?'h4':'h3',m=s.m,fee=feeLabel(m);
- return `<article class="market" id="market-${m.id}"><div class="card-heading"><${tag} class="market-title"><a href="${esc(m.url)}" target="_blank" rel="noopener" title="Details on Berlin.de">${esc(m.name)}${icon('external')}</a></${tag}>${saveButton(m)}</div>${!grouped&&m.district?`<p class="card-district">${esc(m.district)}</p>`:''}<div class="card-meta"><span class="card-hours${s.unknown?' unconfirmed':''}">${icon('clock')}<span>${esc(timeLabel(s))}</span></span>${openBadge(s)}${fee?`<span class="card-fee" aria-label="Admission: ${esc(fee)}">${icon('ticket')}<span>${esc(fee)}</span></span>`:''}</div>${distanceMarkup(m)}<div class="market-actions">${m.coords?`<button class="map-toggle" id="toggle-${m.id}" aria-expanded="false" aria-controls="map-${m.id}" aria-label="Show or hide map for ${esc(m.name)}">${icon('map')}<span class="toggle-label">Map</span></button>`:''}<a class="google-directions" href="${esc(googleMapsUrl(m))}" target="_blank" rel="noopener" aria-label="Navigate to ${esc(m.name)} with Google Maps">${icon('go')}<span>Directions</span></a></div><div class="inline-map" id="map-${m.id}" hidden></div></article>`;
+ return `<article class="market" id="market-${m.id}"><div class="card-heading"><${tag} class="market-title"><a href="${esc(m.url)}" target="_blank" rel="noopener" title="Market details on Berlin.de (opens a new tab)">${esc(m.name)}${icon('external')}</a></${tag}>${saveButton(m)}</div>${!grouped&&m.district?`<p class="card-district">${esc(m.district)}</p>`:''}<div class="card-meta"><span class="card-hours${s.unknown?' unconfirmed':''}">${icon('clock')}<span>${esc(timeLabel(s))}</span></span>${openBadge(s)}${fee?`<span class="card-fee" aria-label="Admission: ${esc(fee)}">${icon('ticket')}<span>${esc(fee)}</span></span>`:''}</div>${distanceMarkup(m)}<div class="market-actions">${m.coords?`<button class="map-toggle" id="toggle-${m.id}" aria-expanded="false" aria-controls="map-${m.id}" aria-label="Show or hide map for ${esc(m.name)}">${icon('map')}<span class="toggle-label">Map</span></button>`:''}<button class="google-directions" data-directions="${m.id}" ${isAppleMobile()?'aria-haspopup="dialog"':''} aria-label="${isAppleMobile()?'Choose navigation app for':'Open Google Maps directions to'} ${esc(m.name)}">${icon('go')}<span>Directions</span></button></div><div class="inline-map" id="map-${m.id}" hidden></div></article>`;
 }
 function clearMapSelection(){focusedMarket=null;overviewMap?.closePopup();$('map-market-select').value=''}
 function setView(next){if(next!=='map')clearMapSelection();view=next;syncUrl();renderMarkets()}
@@ -126,7 +132,7 @@ function renderOverview(available){
  select.disabled=!located.length;
  const missing=available.length-located.length,note=$('overview-note');
  note.textContent=!available.length?'No markets match this day and filters.':!located.length?'No map locations available for this day.':`${located.length} market${located.length===1?'':'s'} on the map. Tap a pin or group for details.${missing?` ${missing} without coordinates — see List.`:''}`;
- $('overview-canvas').hidden=!located.length;$('show-all').disabled=!located.length;
+ $('map-legend').hidden=!located.length||selected!==today();$('overview-canvas').hidden=!located.length;$('show-all').disabled=!located.length;
  if(!located.length){overviewMap?.remove();overviewMap=null;mapKey='';return}
  if(typeof L==='undefined'){note.textContent='Map unavailable. Use the List view for directions.';return}
  const nextKey=selected+':'+located.map(s=>s.m.id).join(',');
@@ -144,7 +150,7 @@ function renderOverview(available){
  function popup(s){
   const m=s.m,status=marketStatus(s),fee=admission(m,selected),h=s.h;
   const time=!h?'Hours TBC':s.overnight?'Until '+hour(h[1]):h[1]===null?'From '+hour(h[0]):hour(h[0])+'–'+hour(h[1])+(h[1]>24?' +1':'');
-  return `<div class="overview-popup"><div class="card-heading"><a class="popup-title" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}${icon('external')}</a>${saveButton(m)}</div><div class="card-meta"><span class="card-hours">${icon('clock')}<span>${esc(timeLabel(s))}</span></span>${openBadge(s)}${feeLabel(m)?`<span class="card-fee">${icon('ticket')}<span>${esc(feeLabel(m))}</span></span>`:''}</div>${distanceMarkup(m)}<p>${esc(m.address||m.district)}</p><a class="google-directions" href="${esc(googleMapsUrl(m))}" target="_blank" rel="noopener">${icon('go')}<span>Directions</span></a></div>`;
+  return `<div class="overview-popup"><div class="card-heading"><a class="popup-title" title="Market details on Berlin.de (opens a new tab)" href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.name)}${icon('external')}</a>${saveButton(m)}</div><div class="card-meta"><span class="card-hours">${icon('clock')}<span>${esc(timeLabel(s))}</span></span>${openBadge(s)}${feeLabel(m)?`<span class="card-fee">${icon('ticket')}<span>${esc(feeLabel(m))}</span></span>`:''}</div>${distanceMarkup(m)}<p>${esc(m.address||m.district)}</p><button class="google-directions" data-directions="${m.id}" ${isAppleMobile()?'aria-haspopup="dialog"':''} aria-label="${isAppleMobile()?'Choose navigation app for':'Open Google Maps directions to'} ${esc(m.name)}">${icon('go')}<span>Directions</span></button></div>`;
  }
  function draw(){
   overviewLayer.clearLayers();overviewMarkers.clear();
@@ -155,7 +161,7 @@ function renderOverview(available){
     marker=L.marker(coords,{icon:L.divIcon({className:'market-cluster',html:`<span>${count}</span>`,iconSize:[36,36]}),title:count+' markets · zoom or tap to explore'});
     marker.bindPopup(`<div class="cluster-popup"><p class="cluster-title">${count} nearby markets</p>${group.items.map(popup).join('')}</div>`,{maxWidth:270,maxHeight:300});
    }else{
-    const single=group.items[0];marker=L.marker(coords,{icon:L.divIcon({className:'market-pin'+(marketStatus(single).label==='Open now'?' is-open':''),html:'<span></span>',iconSize:[22,22]}),title:single.m.name}).bindTooltip(single.m.name).bindPopup(popup(single),{maxWidth:270});
+    const single=group.items[0],status=pinStatus(single);marker=L.marker(coords,{icon:L.divIcon({className:'market-pin '+status.cls,html:'<span aria-hidden="true">'+status.symbol+'</span>',iconSize:[26,26]}),title:single.m.name+' · '+status.label}).bindTooltip(esc(single.m.name)+' · '+status.label).bindPopup(popup(single),{maxWidth:270,maxHeight:240});
    }
    marker.on('click',()=>{if(count===1)focusedMarket=String(group.items[0].m.id)});marker.addTo(overviewLayer);for(const s of group.items)overviewMarkers.set(String(s.m.id),marker);
   }
@@ -190,9 +196,10 @@ async function shareDay(){
  catch{$('share-fallback').hidden=false;$('share-link').value=url;$('share-link').focus();$('share-link').select()}
 }
 function emptyMarkup(){
- const title=openOnly?(favoritesOnly?'No saved markets open now':'No markets open now'):favoritesOnly?(favorites.size?'No saved markets on this day':'No favorites yet'):district?'No markets in '+district+' on this day':'No markets listed for this day';
- const hint=openOnly?'Opening times are based on the published schedule.':favoritesOnly?(favorites.size?'Try another date or browse all markets.':'Tap a market’s bookmark to save it here.'):'Try another date in the calendar.';
- return `<div class="empty-state"><p>${title}</p><span>${hint}</span>${openOnly||favoritesOnly||district?'<button id="empty-reset">'+(selected===today()?"See today’s full list":"Browse all markets")+'</button>':''}</div>`;
+ const filtered=openOnly||favoritesOnly||district;
+ const title=filtered?'No markets match these filters':openOnly?(favoritesOnly?'No saved markets open now':'No markets open now'):favoritesOnly?(favorites.size?'No saved markets on this day':'No favorites yet'):district?'No markets in '+district+' on this day':'No markets listed for this day';
+ const hint=filtered?'Clear filters to see all markets on this date.':openOnly?'Opening times are based on the published schedule.':favoritesOnly?(favorites.size?'Try another date or browse all markets.':'Tap a market’s bookmark to save it here.'):'Try another date in the calendar.';
+ return `<div class="empty-state"><p>${title}</p><span>${hint}</span>${openOnly||favoritesOnly||district?'<button id="empty-reset">'+'Clear filters'+'</button>':''}</div>`;
 }
 function resetFilters(){district='';openOnly=false;favoritesOnly=false;origin=null;locationMessage='';buildDays();selectDate(selected,false);updateStripHeading();$('filter-menu').open=false}
 function renderMarkets(){
@@ -204,13 +211,16 @@ function renderMarkets(){
  $('markets').hidden=view!=='list';$('map-overview').hidden=view!=='map';
  $('list-view').setAttribute('aria-pressed',view==='list');$('map-view').setAttribute('aria-pressed',view==='map');
  $('today').hidden=selected===today();
- const active=Number(openOnly)+Number(favoritesOnly)+Number(Boolean(origin))+Number(Boolean(district));$('filter-summary').textContent='Filter & sort'+(active?' · '+active:'');
+ const active=Number(openOnly)+Number(favoritesOnly)+Number(Boolean(origin))+Number(Boolean(district));$('filter-summary').innerHTML='Filters'+(active?'<span class="filter-count">'+active+'</span>':'');$('filter-summary').setAttribute('aria-label','Filters'+(active?', '+active+' active':''));
  $('open-now').setAttribute('aria-pressed',openOnly);$('favorites-only').setAttribute('aria-pressed',favoritesOnly);$('favorites-only').textContent='Saved markets'+(favorites.size?' ('+favorites.size+')':'');
  $('nearby').setAttribute('aria-pressed',Boolean(origin));$('nearby').disabled=locating;$('nearby').textContent=origin?'Distance ↑':'Near me';
  $('browse-status').textContent=locationMessage||(openOnly?'Open now, based on published hours.':favoritesOnly?'Your saved markets · stored on this device.':'');
  $('day-title').textContent=(selected===today()?'Today, ':'')+asDate(selected).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});
  $('count').textContent=(openOnly||favoritesOnly||district?available.length+' of '+scheduled.length:available.length)+' market'+(scheduled.length===1?'':'s');
- $('active-filters').hidden=!active;$('active-filter-label').textContent=[openOnly?'Open now':'',favoritesOnly?'Favorites':'',origin?'Nearest first':'',district].filter(Boolean).join(' · ');
+ $('active-filters').hidden=!active;
+ const chips=[['open',openOnly?'Open now':''],['favorites',favoritesOnly?'Saved':''],['nearby',origin?'Nearest first':''],['district',district]].filter(([,label])=>label);
+ $('active-filter-label').innerHTML=chips.map(([key,label])=>`<button class="filter-chip" data-remove-filter="${key}" aria-label="Remove ${esc(label)} filter">${esc(label)}<span aria-hidden="true">×</span></button>`).join('');
+ $('active-filter-label').querySelectorAll('[data-remove-filter]').forEach(button=>button.onclick=()=>{const key=button.dataset.removeFilter;if(key==='open')openOnly=false;if(key==='favorites')favoritesOnly=false;if(key==='nearby'){origin=null;locationMessage=''}if(key==='district')district='';buildDays();selectDate(selected,false);updateStripHeading();$('filter-summary').focus()});
  const groups=new Map();
  for(const slot of available){
   const district=(slot.m.district||'').trim(),key=district.toLocaleLowerCase('de');
@@ -262,3 +272,47 @@ window.MarketCalendar={
   updateStripHeading();
  }
 };
+
+// One navigation chooser shared by market cards and map popups.
+function isAppleMobile(){return /iPhone|iPad|iPod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)}
+const appleMobile=isAppleMobile();
+const directionsDialog=document.createElement('dialog');
+directionsDialog.className='directions-dialog';
+directionsDialog.setAttribute('aria-labelledby','directions-title');
+let preferredMaps='';try{preferredMaps=localStorage.getItem('berlin-maps-app-v1')||''}catch{}
+let currentDirectionsMarket=null,choosingMapsPreference=false;
+directionsDialog.innerHTML=`<h2 id="directions-title">Open directions in</h2><p id="directions-market"></p><a id="directions-google" target="_blank" rel="noopener">Google Maps ${icon('external')}</a><a id="directions-apple" target="_blank" rel="noopener">Apple Maps ${icon('external')}</a><form method="dialog"><button>Cancel</button></form>`;
+document.body.append(directionsDialog);
+document.addEventListener('click',event=>{
+ const trigger=event.target.closest('[data-directions]');if(!trigger)return;
+ const market=MARKETS.find(m=>String(m.id)===trigger.dataset.directions);if(!market)return;
+ currentDirectionsMarket=market;choosingMapsPreference=false;$('directions-title').textContent='Open directions in';saveBrowse();
+ if(!appleMobile){window.open(googleMapsUrl(market),'_blank','noopener');return}
+ if(preferredMaps==='google'||preferredMaps==='apple'){window.open(preferredMaps==='google'?googleMapsUrl(market):appleMapsUrl(market),'_blank','noopener');return}
+ $('directions-market').textContent=market.name;
+ $('directions-google').href=googleMapsUrl(market);
+ $('directions-apple').href=appleMapsUrl(market);
+ directionsDialog.showModal();
+});
+directionsDialog.addEventListener('click',event=>{if(event.target.closest('a')){if(choosingMapsPreference)event.preventDefault();preferredMaps=event.target.closest('a').id==='directions-apple'?'apple':'google';try{localStorage.setItem('berlin-maps-app-v1',preferredMaps)}catch{}updateMapsPreference();directionsDialog.close();}else if(event.target===directionsDialog){const r=directionsDialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)directionsDialog.close()}});
+
+function pinStatus(slot){
+ if(selected!==today())return {cls:'is-scheduled',symbol:'○',label:'Scheduled'};
+ if(slot.unknown)return {cls:'is-unknown',symbol:'?',label:'Hours unconfirmed'};
+ const closing=closingMinutes(slot,selected,today(),minute());
+ if(closing!==null)return {cls:'is-closing',symbol:'◷',label:'Closes in '+closing+' min'};
+ if(openNow(slot,selected,today(),minute()))return {cls:'is-open',symbol:'●',label:'Open now'};
+ return {cls:'is-closed',symbol:'−',label:marketStatus(slot).label};
+}
+function saveBrowse(){try{sessionStorage.setItem('berlin-browse-v1',JSON.stringify({url:location.search,scroll:window.scrollY,strip:dayStrip.scrollLeft,collapsed:[...collapsedDistricts]}))}catch{}}
+window.addEventListener('pagehide',saveBrowse);
+function refreshCurrentStatus(){const y=window.scrollY;if(lastToday!==today()){lastToday=today();if(selected!==lastToday)openOnly=false;buildDays();selectDate(selected,false);updateStripHeading()}else renderMarkets();window.scrollTo({top:y,behavior:'instant'})}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)saveBrowse();else refreshCurrentStatus()});
+window.addEventListener('pageshow',event=>{if(event.persisted)refreshCurrentStatus()});
+if(restoredBrowse?.url===location.search)requestAnimationFrame(()=>{dayStrip.scrollTo({left:Number(restoredBrowse.strip)||0,behavior:'instant'});updateStripHeading();window.scrollTo({top:Number(restoredBrowse.scroll)||0,behavior:'instant'})});
+
+function appleMapsUrl(market){return 'https://maps.apple.com/?'+new URLSearchParams({daddr:market.coords?market.coords.join(','):(market.address||market.name)+', Berlin',dirflg:'r'})}
+const changeMaps=document.createElement('button');changeMaps.className='change-maps';changeMaps.textContent='Change maps app';changeMaps.hidden=true;document.querySelector('.data-panel').append(changeMaps);
+function updateMapsPreference(){changeMaps.hidden=!appleMobile||!preferredMaps}
+updateMapsPreference();
+changeMaps.onclick=()=>{choosingMapsPreference=true;$('directions-title').textContent='Preferred maps app';$('directions-market').textContent='Use this app next time you tap Directions.';$('directions-google').href='#';$('directions-apple').href='#';directionsDialog.showModal()};
