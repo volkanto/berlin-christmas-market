@@ -1,11 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import vm from 'node:vm';
 import {parseDates,parseHours,normalizeMarket} from '../public/market-parser.js';
 import {validPath,parseDetail,parseIndex} from '../lib/berlin-source.mjs';
-const context={};vm.createContext(context);vm.runInContext(fs.readFileSync(new URL('../public/data.js',import.meta.url),'utf8')+';this.records=JSON.parse(JSON.stringify(MARKETS));',context);
-const baseline=context.records;
+const baseline=JSON.parse(fs.readFileSync(new URL('./fixtures/baseline-2026.json',import.meta.url),'utf8')).markets;
 test('published 2026 dates and weekly schedules agree with the independently curated snapshot',()=>{
  for(const m of baseline){assert.equal(JSON.stringify(parseDates(m.dateText,2026).dates),JSON.stringify([...m.dates].sort()),m.name+' dates');assert.equal(JSON.stringify(parseHours(m.hoursText,m.dateText,2026).hours),JSON.stringify(m.hours),m.name+' hours')}
 });

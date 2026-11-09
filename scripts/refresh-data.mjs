@@ -7,7 +7,7 @@ let report;
 try{
  const previous=await loadDataset(root),data=await updateMarkets(previous);
  await writeJsonAtomic(path.join(root,'.cache/markets.json'),data);
- report={status:data.kind,at:data.checkedAt,updated:data.markets.length-data.failed,total:data.markets.length,failed:data.failed,summary:data.failed?`${data.markets.length-data.failed}/${data.markets.length} market listings refreshed. Saved details were retained for unavailable listings.`:`All ${data.markets.length} market listings refreshed from Berlin.de.`};
+ report={status:data.kind,at:data.checkedAt,updated:data.refreshed,reused:data.reused,deferred:data.deferred,total:data.markets.length,failed:data.failed,summary:`${data.refreshed} detail pages updated; ${data.reused} recent cached details reused; ${data.deferred} queued for a later run. ${data.failed} listings have saved or pending details.`};
  console.log(report.summary);
 }catch(error){
  report={status:'failed',at:new Date().toISOString(),summary:'Berlin.de could not be refreshed. The last successful data or bundled snapshot will be published.',reason:error instanceof Error?error.message:'Source unavailable'};

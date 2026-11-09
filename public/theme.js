@@ -5,7 +5,7 @@
  let explicit=new URLSearchParams(location.search).get('theme');
  function apply(theme){
   root.dataset.theme=theme;
-  document.querySelector('meta[name="theme-color"]').content=theme==='dark'?'#1c2820':'#fcf9ea';
+  document.querySelector('meta[name="theme-color"]').content=theme==='dark'?'#1e2430':'#f5f4f1';
   const button=document.getElementById('theme-toggle');
   if(button){const label=theme==='dark'?'Switch to light theme':'Switch to dark theme';button.setAttribute('aria-label',label);button.setAttribute('title',label);button.setAttribute('aria-pressed',theme==='dark')}
  }
