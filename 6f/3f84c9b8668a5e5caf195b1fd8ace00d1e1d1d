@@ -1,0 +1,35 @@
+public/app.js
+  s_6b52e97f8cf662::t_daa06925dd396c 1,22-23,94,113-120,124,135,153,164,199-202,214,220-223,275-318
+public/calendar-utils.js
+  s_19d487d22b4b62::t_5ac4618636175d 33-39
+public/index.html
+  s_6b52e97f8cf662::t_8ecf9396cfe12d 4-6
+public/style.css
+  s_6b52e97f8cf662::t_ed3ea0e3231d43 116-147
+tests/closing.test.mjs
+  s_19d487d22b4b62::t_65f07d180eab53 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f3f84c9b8668a5e5caf195b1fd8ace00d1e1d1d",
+  "prompts": {},
+  "sessions": {
+    "s_19d487d22b4b62": {
+      "agent_id": {
+        "tool": "gemini",
+        "id": "3f8e554f-962e-482a-8ce6-7e361548053b",
+        "model": "gemini-3.8-flash"
+      },
+      "human_author": "volkan <volkan.tokmak@deliveryhero.com>"
+    },
+    "s_6b52e97f8cf662": {
+      "agent_id": {
+        "tool": "gemini",
+        "id": "def80327-a81d-42dd-a177-0c86be25dfc7",
+        "model": "gemini-3.8-flash"
+      },
+      "human_author": "volkan <volkan.tokmak@deliveryhero.com>"
+    }
+  }
+}
